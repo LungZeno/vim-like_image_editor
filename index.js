@@ -6,23 +6,38 @@ var statusline = document.getElementById("statusline");
 var xCor=0, yCor=0, angle=0;
 var lastStatusline = "";
 var lastTimestamp;
-function updateStatusline(timestamp){
-  main: {
-    if(lastTimestamp === timestamp)
-      break main;
-    lastTimestamp = timestamp;
-    var statusText = `[${xCor},${yCor}],${angle}`;
-    statusText += "," + keysBuffer;
-    if(macroRecording)
-      statusText += ",Recording";
-    if(lastStatusline === statusText)
-      break main;
-    lastStatusline = statusText;
-    statusline.textContent = statusText;
-  }
-  requestAnimationFrame( updateStatusline );
+function updateStatusline(event){
+  if(event.delta === 0)
+    return;
+  var statusText = `[${xCor},${yCor}],${angle}`;
+  statusText += "," + keysBuffer;
+  if(macroRecording)
+    statusText += ",Recording";
+  if(lastStatusline === statusText)
+    return;
+  lastStatusline = statusText;
+  drawStatusline(statusText);
 }
-requestAnimationFrame(updateStatusline);
+paper.setup("world");
+var worldProject = paper.project;
+var uiProject = new paper.Project("ui");
+var statusPointText = new paper.PointText({
+  point: [0, paper.project.view.viewSize.height - 24],
+  content: 'test',
+  fillColor: 'black',
+  fontFamily: 'Courier New',
+//  fontWeight: 'bold',
+  fontSize: 24
+});
+worldProject.activate();
+paper.view.on("frame", updateStatusline);
+function drawStatusline(text){
+//  statusline.textContent = text;
+  var orginalProject = paper.project;
+  uiProject.activate();
+  statusPointText.content = text;
+  orginalProject.activate();
+}
 var v = {
   count:0,
   count1:1,
@@ -40,9 +55,16 @@ var motions = [
 ];
 var operators = [
   ["f", (motion)=>{
+    worldProject.activate();
+    var path = new paper.Path();
+    path.strokeColor = 'black';
+//    path.moveTo(new paper.Point(xCor, yCor));
+    path.add(new paper.Point(xCor, yCor));
     setPos(motion[1]());
-    worldCtx.lineTo(xCor, yCor);
-    worldCtx.stroke();
+//    path.lineTo(new paper.Point(xCor, yCor));
+    path.add(new paper.Point(xCor, yCor));
+//    worldCtx.lineTo(xCor, yCor);
+//    worldCtx.stroke();
   }]
 ];
 var commands = [
@@ -116,7 +138,7 @@ function setPos(pos) {
 }
 function move(motion) {
   setPos(motion[1]());
-  worldCtx.moveTo(xCor, yCor);
+//  worldCtx.moveTo(xCor, yCor);
 }
 function consumeCount(key, keysBuffer){
   var count = keysBuffer.slice(keysBuffer.index).toString();
@@ -170,7 +192,9 @@ var interpretFail = false;
 function consumeFull(key, keysBuffer){
   keysBuffer.index = 0;
   var interpretFail = false;
-  if(key === "Escape") {
+  if(key.length > 1 && !["escape","delete"].includes(key))
+    return [keysBuffer, interpretFail];
+  if(key === "escape") {
     keysBuffer.length = 0;
     return [keysBuffer, interpretFail];
   }
@@ -226,10 +250,9 @@ function consumeFull(key, keysBuffer){
 }
 function interpreterMain(event){
   var key = event.key;
-  if(key.length > 1 && !["Escape","Delete"].includes(key))
-    return;
   if(macroRecording)
     macroRecodingBuffer.push(key);
   [keysBuffer, interpretFail] = consumeFull(key, keysBuffer.clone());
 }
-document.body.addEventListener("keydown", interpreterMain);
+//document.body.addEventListener("keydown", interpreterMain);
+new paper.Tool().on("keydown", interpreterMain);
