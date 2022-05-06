@@ -122,7 +122,7 @@ class KeysBuffer extends Array {
     return KeysBuffer.from(string.matchAll(/<([^<>]+)>|[\d\D]/g)).map(_=>(_[1]||_[0]));
   }
   static escapeOne(key) {
-    return key.length>1?'<'+key+'>':(key==='<'?'<Lt>':key);
+    return key.length>1?'<'+key+'>':(key==='<'?'<lt>':key);
   }
 }
 var keysBuffer = new KeysBuffer();
@@ -155,7 +155,7 @@ function consumeCount(key, keysBuffer){
   } else if( (count === "" ? /^\d$/ : (count.includes(".") ? /^\d$/ : /^[\d.]$/)).test(key) ) {
     count += key;
     keysBuffer.push(key);
-  } else if(count !== "" && key === "Delete"){
+  } else if(count !== "" && key === "delete"){
     count = count.substring(0, count.length-1);
     keysBuffer.pop();
   } else
