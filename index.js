@@ -2,7 +2,7 @@ var worldCanvas = document.getElementById("world");
 var turtleCanvas = document.getElementById("turtle");
 var worldCtx = worldCanvas.getContext("2d");
 var turtleCtx = turtleCanvas.getContext("2d");
-var statusline = document.getElementById("statusline");
+//var statusline = document.getElementById("statusline");
 var xCor=0, yCor=0, angle=0;
 var lastStatusline = "";
 var lastTimestamp;
@@ -18,24 +18,83 @@ function updateStatusline(event){
   lastStatusline = statusText;
   drawStatusline(statusText);
 }
+var errorline = "";
+var lastErrorline = "";
+function updateErrorline(event){
+  if(event.delta === 0)
+    return;
+  if(lastErrorline === errorline)
+    return;
+  lastErrorline = errorline;
+  if(mode !== "c"){
+    cmdlineBuffer = new KeysBuffer();
+    cmdline = "";
+    drawCmdline(cmdline);
+  }
+  drawErrorline(errorline);
+}
+var cmdline = "";
+var lastCmdline = "";
+function updateCmdline(event){
+  if(event.delta === 0)
+    return;
+  if(mode !== "c")
+    return;
+  cmdline = ":" + cmdlineBuffer;
+  if(lastCmdline === cmdline)
+    return;
+  lastCmdline = cmdline;
+  errorline = "";
+  drawCmdline(cmdline);
+}
 paper.setup("world");
 var worldProject = paper.project;
 var uiProject = new paper.Project("ui");
 var statusPointText = new paper.PointText({
-  point: [0, paper.project.view.viewSize.height - 24],
-  content: 'test',
+  point: [0, 0],
+  content: '',
   fillColor: 'black',
   fontFamily: 'Courier New',
 //  fontWeight: 'bold',
   fontSize: 24
 });
+statusPointText.bounds.top = paper.project.view.viewSize.height - statusPointText.bounds.height * 2;
+var errorPointText = new paper.PointText({
+  point: [0, 0],
+  content: '',
+  fillColor: 'red',
+  fontFamily: 'Courier New',
+  fontSize: 24
+});
+errorPointText.bounds.top = paper.project.view.viewSize.height - errorPointText.bounds.height;
+var cmdPointText = new paper.PointText({
+  point: [0, 0],
+  content: '',
+  fillColor: 'black',
+  fontFamily: 'Courier New',
+  fontSize: 24
+});
+cmdPointText.bounds.top = paper.project.view.viewSize.height - cmdPointText.bounds.height;
 worldProject.activate();
 paper.view.on("frame", updateStatusline);
+paper.view.on("frame", updateErrorline);
+paper.view.on("frame", updateCmdline);
 function drawStatusline(text){
-//  statusline.textContent = text;
   var orginalProject = paper.project;
   uiProject.activate();
   statusPointText.content = text;
+  orginalProject.activate();
+}
+function drawErrorline(text){
+  var orginalProject = paper.project;
+  uiProject.activate();
+  errorPointText.content = text;
+  orginalProject.activate();
+}
+function drawCmdline(text){
+  var orginalProject = paper.project;
+  uiProject.activate();
+  cmdPointText.content = text;
   orginalProject.activate();
 }
 var v = {
@@ -54,13 +113,13 @@ var motions = [
   ["p", ()=>({x:xCor+v.count1})]
 ];
 var operators = [
-  ["f", (motion)=>{
+  ["f", (pos)=>{
     worldProject.activate();
     var path = new paper.Path();
     path.strokeColor = 'black';
 //    path.moveTo(new paper.Point(xCor, yCor));
     path.add(new paper.Point(xCor, yCor));
-    setPos(motion[1]());
+    setPos(pos);
 //    path.lineTo(new paper.Point(xCor, yCor));
     path.add(new paper.Point(xCor, yCor));
 //    worldCtx.lineTo(xCor, yCor);
@@ -69,8 +128,20 @@ var operators = [
 ];
 var commands = [
   ["h", ()=>{angle=(angle+360-v.count1) % 360}],
-  ["l", ()=>{angle=(angle+360+v.count1) % 360}]
+  ["l", ()=>{angle=(angle+360+v.count1) % 360}],
+  [":", startCmdline]
 ];
+class VimError extends Error {
+}
+function startCmdline(){
+  if(mode === "n" && v.count === v.count1)
+    throw new VimError("not implement range yet");
+  if(mode === "no")
+    throw new VimError("not implement cmdline as a motion yet");
+  previousMode = mode;
+  mode = "c";
+  cmdlineBuffer = new KeysBuffer();
+}
 var registers = "abcdefghijklmnopqrstuvwxyz".split("").map(_=>[_,,]);
 var registerNameForMacroRecoding = "";
 var registerIndexForMacroRecoding = -1;
@@ -105,6 +176,10 @@ registers.forEach((_,i)=>{
       }
   }]);
 });
+registers.push([":",":"]);
+commands.push(["@:",repeatCmdline]);
+function repeatCmdline(){
+}
 class KeysBuffer extends Array {
   index = 0;
   toString(){
@@ -126,7 +201,9 @@ class KeysBuffer extends Array {
   }
 }
 var keysBuffer = new KeysBuffer();
-var keysBufferIndex = 0;
+var cmdlineBuffer = new KeysBuffer();
+var mode = null;
+var previousMode = null;
 var macroRecording = false;
 function setPos(pos) {
   if("x" in pos)
@@ -155,7 +232,7 @@ function consumeCount(key, keysBuffer){
   } else if( (count === "" ? /^\d$/ : (count.includes(".") ? /^\d$/ : /^[\d.]$/)).test(key) ) {
     count += key;
     keysBuffer.push(key);
-  } else if(count !== "" && key === "delete"){
+  } else if(count !== "" && key === "Delete"){
     count = count.substring(0, count.length-1);
     keysBuffer.pop();
   } else
@@ -192,9 +269,9 @@ var interpretFail = false;
 function consumeFull(key, keysBuffer){
   keysBuffer.index = 0;
   var interpretFail = false;
-  if(key.length > 1 && !["escape","delete"].includes(key))
+  if(key.length > 1 && !["Escape","Delete"].includes(key))
     return [keysBuffer, interpretFail];
-  if(key === "escape") {
+  if(key === "Escape") {
     keysBuffer.length = 0;
     return [keysBuffer, interpretFail];
   }
@@ -224,7 +301,7 @@ function consumeFull(key, keysBuffer){
     if(mismatch)
       return [new KeysBuffer(), true];
     if(_motions.filter(_=>_[0]===motionName).length === 0 && consumedForKey)
-      return;
+      return [keysBuffer, interpretFail];
     motion = motions.find(_=>_[0]===motionName);
     keysBuffer.index +=  KeysBuffer.numOfKeys(motionName);
   } else {
@@ -234,7 +311,11 @@ function consumeFull(key, keysBuffer){
   }
   if(operator) {
     setCount(count, count1);
-    operator[1](motion);
+    var orginalMode = mode;
+    mode = "no";
+    var pos = motion[1]();
+    mode = orginalMode;
+    operator[1](pos);
   } else if(motion) {
     setCount(count, count1);
     move(motion);
@@ -248,11 +329,55 @@ function consumeFull(key, keysBuffer){
   keysBuffer.index = 0;
   return [keysBuffer, interpretFail];
 }
+function consumeCmdline(key, keysBuffer){
+  if(key === "Control+V"){
+    cmdlineBuffer = cmdlineBuffer.concat(KeysBuffer.fromString(document.getElementById("clipboard").value));
+  } else if(key.length > 1 && !["Enter"].includes(key)){
+  } else if(key === "Enter" || key === "\x0d"){
+    var cmdParts = cmdlineBuffer.toString().match(/^\s*([a-zA-Z]+)\s+(.*)$/);
+    if(cmdParts === null || cmdParts[1] !== "importSVG")
+      throw new VimError("unknow command");
+    try {
+      worldProject.importSVG(cmdParts[2])
+    } catch(e) {
+      throw new VimError(e.message);
+    }
+    mode = previousMode;
+    previousMode = null;
+  } else
+    cmdlineBuffer.push(key);
+  return [keysBuffer, false]
+}
+var modeFunctions = {
+  n : consumeFull,
+  c : consumeCmdline
+};
+function consumeBranchExchange(key, keysBuffer){
+  var modeFunction = modeFunctions[mode];
+  try {
+    return modeFunction(key, keysBuffer.clone());
+  } catch (e) {
+    if(e instanceof VimError){
+      if(mode === "c"){
+        mode = previousMode;
+        previousMode = null;
+      }
+      errorline = "error: " + e.message;
+      return [new KeysBuffer(), true];
+    } else
+      throw e;
+  }
+}
 function interpreterMain(event){
   var key = event.key;
+//console.log(event);
+//  var key = event.character || event.key;
+  if(event.ctrlKey && key !== "Control")
+    key = "Control+" + key.replace(/^\w/, match=>match.toUpperCase());
   if(macroRecording)
     macroRecodingBuffer.push(key);
-  [keysBuffer, interpretFail] = consumeFull(key, keysBuffer.clone());
+  [keysBuffer, interpretFail] = consumeBranchExchange(key, keysBuffer.clone());
 }
-//document.body.addEventListener("keydown", interpreterMain);
-new paper.Tool().on("keydown", interpreterMain);
+mode = "n";
+//new paper.Tool().on("keydown", interpreterMain); //cannot detect control-v but all control and no v
+document.addEventListener("keydown", interpreterMain);

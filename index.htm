@@ -8,9 +8,13 @@
 #container {
   display:inline-block;
   border:1px solid black;
+  height:600px;
 }
 #container canvas:not(:last-child) {
   position:absolute;
+}
+#clipboard {
+  width: 800px;
 }
 </style>
 </head>
@@ -21,7 +25,7 @@
   <canvas id="ui" width="800" height="600"></canvas>
   <canvas id="turtle" width="800" height="600"></canvas>
 </div>
-<div id="statusline"></div>
+<br/><input type="text" id="clipboard" />
 <script src="https://unpkg.com/paper@0.12.15/dist/paper-full.js"></script>
 <script src="index.js"></script>
 </body>
