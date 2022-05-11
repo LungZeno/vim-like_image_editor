@@ -202,7 +202,7 @@ function consumeFullVisual(key, keysBuffer){
   if(operator) {
     setCount(count, count1);
     var orginalMode = mode;
-    mode = "no";
+    mode = "vo";
     var pos = motion[1]();
     mode = orginalMode;
     operator[1](pos);
