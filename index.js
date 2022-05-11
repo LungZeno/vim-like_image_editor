@@ -13,6 +13,7 @@ function updateStatusline(event){
   statusText += "," + keysBuffer;
   if(macroRecording)
     statusText += ",Recording";
+  statusText += ",[mode=" + mode +"]";
   if(lastStatusline === statusText)
     return;
   lastStatusline = statusText;
@@ -129,8 +130,95 @@ var operators = [
 var commands = [
   ["h", ()=>{angle=(angle+360-v.count1) % 360}],
   ["l", ()=>{angle=(angle+360+v.count1) % 360}],
-  [":", startCmdline]
+  [":", startCmdline],
+  ["v", visualSelect]
 ];
+var vmotions = [];
+var voperators = [];
+var vcommands = [
+  ["s", scale]
+];
+var selectedSet = [];
+function scale(){
+  var factor = v.count !== v.count1 ? 0.5 : v.count;
+  selectedSet.forEach(i=>i.scale(factor));
+}
+function visualSelect(){
+  if(worldProject.layers.length === 0)
+    throw new VimError("no item. Nothing is selected.");
+  worldProject.layers[0].selected = true;
+  selectedSet.push(worldProject.layers[0]);
+  previousMode = mode;
+  mode = "v";
+}
+function consumeFullVisual(key, keysBuffer){
+  keysBuffer.index = 0;
+  var interpretFail = false;
+  if(key.length > 1 && !["Escape","Delete"].includes(key))
+    return [keysBuffer, interpretFail];
+  if(key === "Escape") {
+    if(keysBuffer.length === 0){
+      selectedSet.forEach(i=>i.selected = false);
+      selectedSet.length = 0;
+      mode = previousMode;
+      previousMode = null;
+    } else
+      keysBuffer.length = 0;
+    return [keysBuffer, interpretFail];
+  }
+  var [consumedForKey, count, keysBuffer] = consumeCount(key, keysBuffer.clone());
+  if(consumedForKey) 
+    return [keysBuffer, interpretFail];
+  keysBuffer.index += count.length;
+  var mismatch, name, items;
+  [consumedForKey, mismatch, name, items, keysBuffer] = mustConsumeName(key, voperators.concat(vmotions).concat(vcommands), keysBuffer.clone());
+  if(mismatch)  // partial match in middle. including no match at all neither at key. sure no full match
+    return [new KeysBuffer(), true];
+  if(!items.find(_=>_[0]===name) && consumedForKey) // partial match to tail. consuming key only in this case
+    return [keysBuffer, interpretFail];
+  keysBuffer.index += KeysBuffer.numOfKeys(name);
+  var operator = voperators.find(_=>_[0]===name);
+  var command;
+  var count1, motionName, _motions, motion;
+  if(operator) {
+    if(consumedForKey) 
+      return [keysBuffer, interpretFail];
+    [consumedForKey, count1, keysBuffer] = consumeCount(key, keysBuffer.clone());
+    if(consumedForKey) 
+      return [keysBuffer, interpretFail];
+    keysBuffer.index += count1.length;
+    [consumedForKey, mismatch, motionName, _motions, keysBuffer] = mustConsumeName(key, vmotions, keysBuffer.clone());
+    if(mismatch)
+      return [new KeysBuffer(), true];
+    if(_motions.filter(_=>_[0]===motionName).length === 0 && consumedForKey)
+      return [keysBuffer, interpretFail];
+    motion = vmotions.find(_=>_[0]===motionName);
+    keysBuffer.index +=  KeysBuffer.numOfKeys(motionName);
+  } else {
+    command = vcommands.find(_=>_[0]===name);
+    if(!command)
+      motion = vmotions.find(_=>_[0]===name);
+  }
+  if(operator) {
+    setCount(count, count1);
+    var orginalMode = mode;
+    mode = "no";
+    var pos = motion[1]();
+    mode = orginalMode;
+    operator[1](pos);
+  } else if(motion) {
+    setCount(count, count1);
+    move(motion);
+  } else {
+    setCount(count, count1);
+    command[1]();
+  }
+  if(!consumedForKey)
+    keysBuffer.push(key);
+  keysBuffer = keysBuffer.slice(keysBuffer.index);
+  keysBuffer.index = 0;
+  return [keysBuffer, interpretFail];
+}
 class VimError extends Error {
 }
 function startCmdline(){
@@ -332,13 +420,21 @@ function consumeFull(key, keysBuffer){
 function consumeCmdline(key, keysBuffer){
   if(key === "Control+V"){
     cmdlineBuffer = cmdlineBuffer.concat(KeysBuffer.fromString(document.getElementById("clipboard").value));
+  } else if(key === "Escape" || key === "Backspace" && cmdlineBuffer.length === 0){
+    cmdlineBuffer.length = 0;
+    mode = previousMode;
+    previousMode = null;
+    cmdline = "";
+    drawCmdline(cmdline);
+  } else if(key === "Backspace"){
+    cmdlineBuffer.pop();
   } else if(key.length > 1 && !["Enter"].includes(key)){
   } else if(key === "Enter" || key === "\x0d"){
     var cmdParts = cmdlineBuffer.toString().match(/^\s*([a-zA-Z]+)\s+(.*)$/);
     if(cmdParts === null || cmdParts[1] !== "importSVG")
       throw new VimError("unknow command");
     try {
-      worldProject.importSVG(cmdParts[2])
+      worldProject.importSVG(cmdParts[2]);
     } catch(e) {
       throw new VimError(e.message);
     }
@@ -350,7 +446,8 @@ function consumeCmdline(key, keysBuffer){
 }
 var modeFunctions = {
   n : consumeFull,
-  c : consumeCmdline
+  c : consumeCmdline,
+  v : consumeFullVisual
 };
 function consumeBranchExchange(key, keysBuffer){
   var modeFunction = modeFunctions[mode];
